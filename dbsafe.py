@@ -1,5 +1,5 @@
 import glob
-
+import json
 import pandas as pd
 import streamlit as st
 import time
@@ -9,9 +9,12 @@ import random
 import os
 import datetime
 import csv
+import plotly.express as px
+from collections import defaultdict
+
 
 pensafe = "safe"
-mapfolder = "map"
+mappath = "map/chinageo.json"
 temppath = "temp"
 
 org2name = {
@@ -52,6 +55,46 @@ org2name = {
     "西藏": "xizang",
     "四川": "sichuan",
     "总部": "safe",
+}
+
+city2province = {
+    "北京": "北京市",
+    "厦门": "福建省",
+    "青海": "青海省",
+    "甘肃": "甘肃省",
+    "天津": "天津市",
+    "河北": "河北省",
+    "贵州": "贵州省",
+    "湖南": "湖南省",
+    "深圳": "广东省",
+    "江西": "江西省",
+    "广东": "广东省",
+    "重庆": "重庆市",
+    "黑龙江": "黑龙江省",
+    "福建": "福建省",
+    "河南": "河南省",
+    "陕西": "陕西省",
+    "海南": "海南省",
+    "云南": "云南省",
+    "湖北": "湖北省",
+    "山东": "山东省",
+    "新疆": "新疆维吾尔自治区",
+    "宁波": "浙江省",
+    "大连": "辽宁省",
+    "江苏": "江苏省",
+    "内蒙古": "内蒙古自治区",
+    "浙江": "浙江省",
+    "吉林": "吉林省",
+    "广西": "广西壮族自治区",
+    "上海": "上海市",
+    "宁夏": "宁夏回族自治区",
+    "安徽": "安徽省",
+    "山西": "山西省",
+    "青岛": "山东省",
+    "辽宁": "辽宁省",
+    "西藏": "西藏自治区",
+    "四川": "四川省",
+    "总部": "北京市",
 }
 
 baseurl = "http://www.safe.gov.cn/www/illegal/index?page="
@@ -145,7 +188,7 @@ def searchsafe(
 
 def display_eventdetail(search_df):
     # draw plotly figure
-    # display_cbircmonth(search_df)
+    display_search_df(search_df)
     # get search result from session
     search_dfnew = st.session_state["search_result_safe"]
     total = len(search_dfnew)
@@ -639,3 +682,334 @@ def download_safesum():
     st.download_button(
         "下载详情数据", data=alldtl.to_csv().encode("utf_8_sig"), file_name=detailname
     )
+
+
+# display bar chart in plotly
+def display_search_df(searchdf):
+    df_month = searchdf.copy()
+    # df_month["发文日期"] = pd.to_datetime(df_month["发布日期"]).dt.date
+    # count by month
+    df_month["month"] = df_month["发布日期"].apply(lambda x: x.strftime("%Y-%m"))
+    df_month_count = df_month.groupby(["month"]).size().reset_index(name="count")
+    # count by month
+    # fig = go.Figure(
+    #     data=[go.Bar(x=df_month_count['month'], y=df_month_count['count'])])
+    # fig.update_layout(title='处罚数量统计', xaxis_title='月份', yaxis_title='处罚数量')
+    # st.plotly_chart(fig)
+
+    # display checkbox to show/hide graph1
+    # showgraph1 = st.sidebar.checkbox("按发文时间统计", key="showgraph1")
+    # fix value of showgraph1
+    showgraph1 = True
+    if showgraph1:
+        x_data = df_month_count["month"].tolist()
+        y_data = df_month_count["count"].tolist()
+        # draw echarts bar chart
+        # bar = (
+        #     Bar()
+        #     .add_xaxis(xaxis_data=x_data)
+        #     .add_yaxis(series_name="数量", y_axis=y_data, yaxis_index=0)
+        #     .set_global_opts(
+        #         title_opts=opts.TitleOpts(title="按发文时间统计"),
+        #         visualmap_opts=opts.VisualMapOpts(max_=max(y_data), min_=min(y_data)),
+        #     )
+        # )
+        # use events
+        # events = {
+        #     "click": "function(params) { console.log(params.name); return params.name }",
+        #     # "dblclick":"function(params) { return [params.type, params.name, params.value] }"
+        # }
+        # use events
+        # yearmonth = st_pyecharts(bar, events=events)
+        bar, yearmonth = print_bar(x_data, y_data, "处罚数量", "按发文时间统计")
+        # st.write(yearmonth)
+        if yearmonth is not None:
+            # get year and month value from format "%Y-%m"
+            # year = int(yearmonth.split("-")[0])
+            # month = int(yearmonth.split("-")[1])
+            # filter date by year and month
+            searchdfnew = df_month[df_month["month"] == yearmonth]
+            # drop column "month"
+            searchdfnew.drop(columns=["month"], inplace=True)
+
+            # set session state
+            st.session_state["search_result_csrc2"] = searchdfnew
+            # refresh page
+            # st.experimental_rerun()
+
+        # 图一解析开始
+        maxmonth = df_month["month"].max()
+        minmonth = df_month["month"].min()
+        # get total number of count
+        num_total = len(df_month["month"])
+        # get total number of month count
+        month_total = len(set(df_month["month"].tolist()))
+        # get average number of count per month count
+        num_avg = num_total / month_total
+        # get month value of max count
+        top1month = max(
+            set(df_month["month"].tolist()), key=df_month["month"].tolist().count
+        )
+        top1number = df_month["month"].tolist().count(top1month)
+
+        image1_text = (
+            "图一解析：从"
+            + minmonth
+            + "至"
+            + maxmonth
+            + "，共发生"
+            + str(num_total)
+            + "起处罚事件，"
+            + "平均每月发生"
+            + str(round(num_avg))
+            + "起处罚事件。其中"
+            + top1month
+            + "最高发生"
+            + str(top1number)
+            + "起处罚事件。"
+        )
+
+        # display total coun
+        st.markdown("##### " + image1_text)
+
+    # # get eventdf sum amount by month
+    # df_sum, df_sigle_penalty = sum_amount_by_month(df_month)
+
+    # sum_data = df_sum["sum"].tolist()
+    # line, yearmonthline = print_line(x_data, sum_data, "处罚金额", "案例金额统计")
+
+    # if yearmonthline is not None:
+    #     # filter date by year and month
+    #     searchdfnew = df_month[df_month["month"] == yearmonthline]
+    #     # drop column "month"
+    #     searchdfnew.drop(columns=["month"], inplace=True)
+    #     # set session state
+    #     st.session_state["search_result_csrc2"] = searchdfnew
+    #     # refresh page
+    #     # st.experimental_rerun()
+
+    # # 图二解析：
+    # sum_data_number = 0  # 把案件金额的数组进行求和
+    # more_than_100 = 0  # 把案件金额大于100的数量进行统计
+    # case_total = 0  # 把案件的总数量进行统计
+
+    # penaltycount = df_sigle_penalty["amount"].tolist()
+    # for i in penaltycount:
+    #     sum_data_number = sum_data_number + i / 10000
+    #     if i > 100 * 10000:
+    #         more_than_100 = more_than_100 + 1
+    #     if i != 0:
+    #         case_total = case_total + 1
+
+    # # for i in sum_data:
+    # #     sum_data_number = sum_data_number + i / 10000
+    # #     if i > 100 * 10000:
+    # #         more_than_100 = more_than_100 + 1
+    # # sum_data_number=round(sum_data_number,2)
+    # if case_total > 0:
+    #     avg_sum = round(sum_data_number / case_total, 2)
+    # else:
+    #     avg_sum = 0
+    # # get index of max sum
+    # topsum1 = df_sum["sum"].nlargest(1)
+    # topsum1_index = df_sum["sum"].idxmax()
+    # # get month value of max count
+    # topsum1month = df_sum.loc[topsum1_index, "month"]
+    # image2_text = (
+    #     "图二解析：从"
+    #     + minmonth
+    #     + "至"
+    #     + maxmonth
+    #     + "，共发生罚款案件"
+    #     + str(case_total)
+    #     + "起;期间共涉及处罚金额"
+    #     + str(round(sum_data_number, 2))
+    #     + "万元，处罚事件平均处罚金额为"
+    #     + str(avg_sum)
+    #     + "万元，其中处罚金额高于100万元处罚事件共"
+    #     + str(more_than_100)
+    #     + "起。"
+    #     + topsum1month
+    #     + "发生最高处罚金额"
+    #     + str(round(topsum1.values[0] / 10000, 2))
+    #     + "万元。"
+    # )
+    # st.markdown("##### " + image2_text)
+
+    # count by orgname
+    df_org_count = df_month.groupby(["区域"]).size().reset_index(name="count")
+    # st.write(df_org_count)
+    org_ls = df_org_count["区域"].tolist()
+    count_ls = df_org_count["count"].tolist()
+    new_orgls, new_countls = count_by_province(org_ls, count_ls)
+    # st.write(new_orgls+ new_countls)
+    map_data = print_map(new_orgls, new_countls, "处罚地图")
+    # st_pyecharts(map_data, map=map, width=800, height=650)
+    # display map
+    # components.html(map.render_embed(), height=650)
+
+    pie, orgname = print_pie(
+        df_org_count["区域"].tolist(), df_org_count["count"].tolist(), "按发文机构统计"
+    )
+    if orgname is not None:
+        # filter searchdf by orgname
+        searchdfnew = searchdf[searchdf["区域"] == orgname]
+        # set session state
+        st.session_state["search_result_csrc2"] = searchdfnew
+        # refresh page
+        # st.experimental_rerun()
+
+    # 图四解析开始
+    orgls = df_month["区域"].value_counts().keys().tolist()
+    countls = df_month["区域"].value_counts().tolist()
+    result = ""
+
+    for org, count in zip(orgls[:3], countls[:3]):
+        result = result + org + "（" + str(count) + "起）,"
+
+    image4_text = (
+        "图四解析："
+        + minmonth
+        + "至"
+        + maxmonth
+        + "，共"
+        + str(len(orgls))
+        + "家地区监管机构提出处罚意见，"
+        + "排名前三的机构为："
+        + result[: len(result) - 1]
+    )
+    st.markdown("#####  " + image4_text)
+
+
+def print_bar(x_data, y_data, y_axis_name, title):
+    # Create a DataFrame from the input data
+    data = pd.DataFrame({"月份": x_data, y_axis_name: y_data})
+    # Create the bar chart
+    fig = px.bar(
+        data,
+        x="月份",
+        y=y_axis_name,
+        title=title,
+        color=y_axis_name,
+        text=y_axis_name,
+        color_continuous_scale=px.colors.sequential.Viridis,
+    )
+
+    # Display the chart
+    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+
+    monthselected = event["selection"]["point_indices"]
+
+    if monthselected == []:
+        clickevent = None
+    else:
+        clickevent = x_data[monthselected[0]]
+
+    return fig, clickevent
+
+
+def print_line(x_data, y_data, y_axis_name, title):
+    # Create a DataFrame from the input data
+    data = pd.DataFrame({"月份": x_data, y_axis_name: y_data})
+    # Create the line chart
+    fig = px.line(data, x="月份", y=y_axis_name, title=title, text=y_axis_name)
+
+    # Display the chart
+    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+
+    monthselected = event["selection"]["point_indices"]
+
+    if monthselected == []:
+        clickevent = None
+    else:
+        clickevent = x_data[monthselected[0]]
+
+    return fig, clickevent
+
+
+def print_pie(namels, valuels, title):
+    data = pd.DataFrame({"names": namels, "values": valuels})
+
+    fig = px.pie(
+        data,
+        names="names",
+        values="values",
+        title=title,
+        labels={"names": "名称", "values": "数量"},
+    )
+    fig.update_traces(textinfo="label+percent", insidetextorientation="radial")
+    # Display the chart
+    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
+
+    monthselected = event["selection"]["point_indices"]
+
+    if monthselected == []:
+        clickevent = None
+    else:
+        clickevent = namels[monthselected[0]]
+
+    return fig, clickevent
+
+
+def print_map(province_name, province_values, title_name):
+    # load the GeoJSON file
+    china_geojson = json.load(open(mappath, "r", encoding="utf-8-sig"))
+
+    # st.write(china_geojson)
+
+    # Create a DataFrame from the provided data
+    data = pd.DataFrame({"省份": province_name, "处罚数量": province_values})
+    # Create the choropleth map
+    # fig = px.choropleth(
+    fig = px.choropleth_mapbox(
+        data,
+        geojson=china_geojson,
+        featureidkey="properties.name",
+        locations="省份",
+        color="处罚数量",
+        color_continuous_scale="Viridis",
+        mapbox_style="carto-positron",
+        zoom=2,
+        center={"lat": 35, "lon": 105},
+        # scope='asia',
+        title=title_name,
+    )
+
+    # Add text labels
+    fig.update_traces(
+        text=data["处罚数量"],
+    )
+
+    # Update geos
+    fig.update_geos(
+        visible=False,
+        fitbounds="locations",
+    )
+
+    # Update layout
+    fig.update_layout(title_text=title_name, title_x=0.5)
+
+    # Display the chart in Streamlit
+    st.plotly_chart(fig, use_container_width=True)
+    return fig
+
+
+def count_by_province(city_ls, count_ls):
+    if len(city_ls) != len(count_ls):
+        raise ValueError("城市列表和计数列表的长度必须相同")
+
+    province_counts = defaultdict(int)
+
+    for city, count in zip(city_ls, count_ls):
+        # province = get_chinese_province_nominatim(city)
+        province = city2province[city]
+        province_counts[province] += count
+        time.sleep(1)  # Be nice to the Nominatim server
+
+    # Sort provinces by count in descending order
+    sorted_provinces = sorted(province_counts.items(), key=lambda x: x[1], reverse=True)
+
+    provinces = [item[0] for item in sorted_provinces]
+    counts = [item[1] for item in sorted_provinces]
+
+    return provinces, counts
