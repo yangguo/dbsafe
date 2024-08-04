@@ -17,6 +17,8 @@ from dbsafe import (
     get_safetoupd,
     get_eventdetail,
     download_safesum,
+    update_safelabel,
+    get_safecat,
 )
 
 
@@ -76,9 +78,10 @@ def main():
         "案例总数",
         "案例搜索",
         "案例更新",
-        "附件处理",
+        # "附件处理",
         "案例下载",
-        "案例上线",
+        "案例分类",
+        # "案例上线",
     ]
 
     choice = st.sidebar.selectbox("选择", menu)
@@ -194,6 +197,14 @@ def main():
         # st.write(dfl)
         # st.write(dfl['区域'].unique().tolist())
         # st.write(dfl.isnull().sum())
+        # drop null value
+        dfl = dfl.dropna(subset=["违法事实"])
+        # fillna
+        dfl = dfl.fillna("")
+        # get catdf
+        catdf = get_safecat()
+        # combine dfl and catdf
+        dfl = pd.merge(dfl, catdf, on="link", how="left")
         # get min and max date of old eventdf
         min_date = dfl["发布日期"].min()
         max_date = dfl["发布日期"].max()
@@ -218,6 +229,9 @@ def main():
                 people_text = st.text_input("当事人关键词")
                 # input event keyword
                 event_text = st.text_input("案情关键词")
+                # input minimum penalty amount
+                min_penalty = st.number_input("最低处罚金额(万元)", value=0)
+
             with col2:
                 end_date = st.date_input("结束日期", value=max_date, min_value=min_date)
                 # input penalty keyword
@@ -251,6 +265,7 @@ def main():
                 penalty_text,
                 org_text,
                 province,
+                min_penalty,
             ]
             search_df = searchsafe(
                 dfl,
@@ -262,6 +277,7 @@ def main():
                 penalty_text,
                 org_text,
                 province,
+                min_penalty,
             )
             # save search_df to session state
             st.session_state["search_result_safe"] = search_df
@@ -280,6 +296,12 @@ def main():
 
     elif choice == "案例下载":
         download_safesum()
+
+    elif choice == "案例分类":
+        # button for generate label text
+        labeltext_button = st.button("生成分类案例")
+        if labeltext_button:
+            update_safelabel()
 
     # elif choice == "案例上线":
     #     uplink_safesum()

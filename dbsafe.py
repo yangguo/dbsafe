@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import streamlit as st
 import time
-from snapshot import get_chrome_driver
+from snapshot import get_chrome_driver, get_safari_driver
 from selenium.webdriver.common.by import By
 import random
 import os
@@ -145,6 +145,7 @@ def searchsafe(
     penalty_text,
     org_text,
     province,
+    min_penalty=0,
 ):
     # wenhao_text = split_words(wenhao_text)
     # people_text = split_words(people_text)
@@ -176,13 +177,14 @@ def searchsafe(
         & (df["处罚内容"].str.contains(penalty_text))
         & (df["作出处罚决定的行政机关名称"].str.contains(org_text))
         & (df["区域"].isin(province))
+        & (df["amount"] >= min_penalty)
     ]  # [col]
     # sort by date desc
-    searchdf.sort_values(by=["发布日期"], ascending=False, inplace=True)
+    searchdf = searchdf.sort_values(by=["发布日期"], ascending=False)
     # drop duplicates
     # searchdf.drop_duplicates(subset=["link"], inplace=True)
     # reset index
-    searchdf.reset_index(drop=True, inplace=True)
+    searchdf = searchdf.reset_index(drop=True)
     return searchdf
 
 
@@ -201,12 +203,19 @@ def display_eventdetail(search_df):
         file_name="搜索结果.csv",
     )
     # display columns
-    discols = ["发布日期", "行政处罚决定书文号", "违规主体名称", "违法事实", "区域"]
+    discols = [
+        "发布日期",
+        "行政处罚决定书文号",
+        "违规主体名称",
+        "违法事实",
+        "区域",
+        "link",
+    ]
     # get display df
     display_df = search_dfnew[discols]
     # set index column using loc
     # display_df["序号"] = display_df.index
-    display_df.loc[:, "序号"] = display_df.index
+    # display_df.loc[:, "序号"] = display_df.index
     # change column name
     # display_df.columns = ["link", "文号","当事人",  "发布日期", "区域"]
 
@@ -222,11 +231,71 @@ def display_eventdetail(search_df):
         st.stop()
 
     # id = selected_rows[0]["序号"]
-    id = display_df.loc[selected_rows[0], "序号"]
+    id = display_df.loc[selected_rows[0], "link"]
     # display event detail
     st.markdown("##### 案情经过")
     # select search_dfnew by id
-    selected_rows_df = search_dfnew[search_dfnew.index == id]
+    # selected_rows_df = search_dfnew[search_dfnew.index == id]
+    selected_rows_df = search_dfnew[search_dfnew["link"] == id]
+
+    # st.text(selected_rows_df.columns)
+
+    selected_rows_df = selected_rows_df[
+        [
+            "行政处罚决定书文号",
+            "违规主体名称",
+            "法定代表人或负责人姓名",
+            "注册地址",
+            "统一社会信用代码",
+            "作出处罚决定的行政机关名称",
+            "违法行为类型",
+            "违法事实",
+            "处罚依据",
+            "处罚类别",
+            "处罚内容",
+            "罚款金额（万元）",
+            "没收金额（万元）",
+            "处罚决定日期",
+            "公开截止期",
+            "备注",
+            "link",
+            "违法主体姓名",
+            "有效身份证件号码（身份证、护照等）",
+            "区域",
+            "罚没款金额（万元）",
+            "公示截止期",
+            "发布日期",
+            "amount",
+        ]
+    ]
+    # rename column
+    selected_rows_df.columns = [
+        "行政处罚决定书文号",
+        "违规主体名称",
+        "法定代表人或负责人姓名",
+        "注册地址",
+        "统一社会信用代码",
+        "作出处罚决定的行政机关名称",
+        "违法行为类型",
+        "违法事实",
+        "处罚依据",
+        "处罚类别",
+        "处罚内容",
+        "罚款金额（万元）",
+        "没收金额（万元）",
+        "处罚决定日期",
+        "公开截止期",
+        "备注",
+        "链接",
+        "违法主体姓名",
+        "有效身份证件号码（身份证、护照等）",
+        "区域",
+        "罚没款金额（万元）",
+        "公示截止期",
+        "发布日期",
+        "罚没总金额（万元）",
+    ]
+
     # transpose and set column name
     selected_rows_df = selected_rows_df.astype(str).T
 
@@ -235,7 +304,7 @@ def display_eventdetail(search_df):
     st.table(selected_rows_df)
 
     # get event detail url
-    url = selected_rows_df.loc["link", "内容"]
+    url = selected_rows_df.loc["链接", "内容"]
     # display url
     st.markdown("##### 案例链接")
     st.markdown(url)
@@ -283,6 +352,8 @@ def display_safesum(org_name_ls):
         display_suminfo(oldsum)
         st.markdown("详情")
         dtl = get_safedetail(org_name)
+        # drop null value
+        dtl = dtl.dropna(subset=["违法事实"])
         # dtl1 = dtl.drop_duplicates(subset=["name", "date", "link"])
         display_suminfo(dtl)
 
@@ -452,12 +523,14 @@ def get_now():
 def toupt_safesum(org_name_ls):
     touptls = []
     for org_name in org_name_ls:
-        st.write(org_name)
+        # st.write(org_name)
         oldsum = get_safesum(org_name)
-        maxsumdate = oldsum["发布日期"].max()
+        lensum = len(oldsum)
         dtl = get_safedetail(org_name)
-        maxdtldate = dtl["发布日期"].max()
-        if maxdtldate < maxsumdate:
+        # drop null value
+        dtl = dtl.dropna(subset=["违法事实"])
+        lendtl = len(dtl)
+        if lensum > lendtl:
             touptls.append(org_name)
     return touptls
 
@@ -469,6 +542,8 @@ def update_toupd(orgname):
     currentsum = get_safesum(orgname)
     # get detail
     oldsum = get_safedetail(orgname)
+    # drop null value
+    oldsum = oldsum.dropna(subset=["违法事实"])
     if oldsum.empty:
         oldidls = []
     else:
@@ -497,7 +572,8 @@ def update_toupd(orgname):
         # save to update dtl list
         toupdname = "safetoupd" + org_name_index
         # add orgname
-        newdf["区域"] = orgname
+        newdf.loc[:, "区域"] = orgname
+        # newdf["区域"] = orgname
         savedf(newdf, toupdname)
     return newdf
 
@@ -512,8 +588,8 @@ def get_safetoupd(orgname):
 # get event detail
 def get_eventdetail(eventsum, orgname):
     org_name_index = org2name[orgname]
-    browser = get_chrome_driver(temppath)
-    # browser = get_safari_driver()
+    # browser = get_chrome_driver(temppath)
+    browser = get_safari_driver()
     detaills = eventsum["link"].tolist()
     datels = eventsum["date"].tolist()
 
@@ -627,6 +703,8 @@ def download_safesum():
         # beginwith = "pbocdtl" + org_name_index
         # dtl = get_csvdf(penpboc, beginwith)
         dtl = get_safedetail(orgname)
+        # drop null value
+        dtl = dtl.dropna(subset=["违法事实"])
         # dtl["区域"] = orgname
         lendtl = len(dtl)
         st.write("详情数据量: " + str(lendtl))
@@ -658,6 +736,9 @@ def download_safesum():
 
     lensum = len(allsum)
     st.write("列表数据量: " + str(lensum))
+    # get unique link number
+    linkno = allsum["link"].nunique()
+    st.write("链接数: " + str(linkno))
     # get min and max date
     mindate = allsum["date"].min()
     maxdate = allsum["date"].max()
@@ -665,6 +746,9 @@ def download_safesum():
 
     lendtl = len(alldtl)
     st.write("详情数据量: " + str(lendtl))
+    # get unique link number
+    linkno = alldtl["link"].nunique()
+    st.write("链接数: " + str(linkno))
     # get min and max date
     mindate = alldtl["date"].min()
     maxdate = alldtl["date"].max()
@@ -772,74 +856,74 @@ def display_search_df(searchdf):
         # display total coun
         st.markdown("##### " + image1_text)
 
-    # # get eventdf sum amount by month
-    # df_sum, df_sigle_penalty = sum_amount_by_month(df_month)
+    # get eventdf sum amount by month
+    df_sum, df_sigle_penalty = sum_amount_by_month(df_month)
 
-    # sum_data = df_sum["sum"].tolist()
-    # line, yearmonthline = print_line(x_data, sum_data, "处罚金额", "案例金额统计")
+    sum_data = df_sum["sum"].tolist()
+    line, yearmonthline = print_line(x_data, sum_data, "处罚金额", "案例金额统计")
 
-    # if yearmonthline is not None:
-    #     # filter date by year and month
-    #     searchdfnew = df_month[df_month["month"] == yearmonthline]
-    #     # drop column "month"
-    #     searchdfnew.drop(columns=["month"], inplace=True)
-    #     # set session state
-    #     st.session_state["search_result_safe"] = searchdfnew
-    #     # refresh page
-    #     # st.experimental_rerun()
+    if yearmonthline is not None:
+        # filter date by year and month
+        searchdfnew = df_month[df_month["month"] == yearmonthline]
+        # drop column "month"
+        searchdfnew.drop(columns=["month"], inplace=True)
+        # set session state
+        st.session_state["search_result_safe"] = searchdfnew
+        # refresh page
+        # st.experimental_rerun()
 
-    # # 图二解析：
-    # sum_data_number = 0  # 把案件金额的数组进行求和
-    # more_than_100 = 0  # 把案件金额大于100的数量进行统计
-    # case_total = 0  # 把案件的总数量进行统计
+    # 图二解析：
+    sum_data_number = 0  # 把案件金额的数组进行求和
+    more_than_100 = 0  # 把案件金额大于100的数量进行统计
+    case_total = 0  # 把案件的总数量进行统计
 
-    # penaltycount = df_sigle_penalty["amount"].tolist()
-    # for i in penaltycount:
+    penaltycount = df_sigle_penalty["amount"].tolist()
+    for i in penaltycount:
+        sum_data_number = sum_data_number + i
+        if i > 100:
+            more_than_100 = more_than_100 + 1
+        if i != 0:
+            case_total = case_total + 1
+
+    # for i in sum_data:
     #     sum_data_number = sum_data_number + i / 10000
     #     if i > 100 * 10000:
     #         more_than_100 = more_than_100 + 1
-    #     if i != 0:
-    #         case_total = case_total + 1
-
-    # # for i in sum_data:
-    # #     sum_data_number = sum_data_number + i / 10000
-    # #     if i > 100 * 10000:
-    # #         more_than_100 = more_than_100 + 1
-    # # sum_data_number=round(sum_data_number,2)
-    # if case_total > 0:
-    #     avg_sum = round(sum_data_number / case_total, 2)
-    # else:
-    #     avg_sum = 0
-    # # get index of max sum
-    # topsum1 = df_sum["sum"].nlargest(1)
-    # topsum1_index = df_sum["sum"].idxmax()
-    # # get month value of max count
-    # topsum1month = df_sum.loc[topsum1_index, "month"]
-    # image2_text = (
-    #     "图二解析：从"
-    #     + minmonth
-    #     + "至"
-    #     + maxmonth
-    #     + "，共发生罚款案件"
-    #     + str(case_total)
-    #     + "起;期间共涉及处罚金额"
-    #     + str(round(sum_data_number, 2))
-    #     + "万元，处罚事件平均处罚金额为"
-    #     + str(avg_sum)
-    #     + "万元，其中处罚金额高于100万元处罚事件共"
-    #     + str(more_than_100)
-    #     + "起。"
-    #     + topsum1month
-    #     + "发生最高处罚金额"
-    #     + str(round(topsum1.values[0] / 10000, 2))
-    #     + "万元。"
-    # )
-    # st.markdown("##### " + image2_text)
+    # sum_data_number=round(sum_data_number,2)
+    if case_total > 0:
+        avg_sum = round(sum_data_number / case_total, 2)
+    else:
+        avg_sum = 0
+    # get index of max sum
+    topsum1 = df_sum["sum"].nlargest(1)
+    topsum1_index = df_sum["sum"].idxmax()
+    # get month value of max count
+    topsum1month = df_sum.loc[topsum1_index, "month"]
+    image2_text = (
+        "图二解析：从"
+        + minmonth
+        + "至"
+        + maxmonth
+        + "，共发生罚款案件"
+        + str(case_total)
+        + "起;期间共涉及处罚金额"
+        + str(round(sum_data_number, 2))
+        + "万元，处罚事件平均处罚金额为"
+        + str(avg_sum)
+        + "万元，其中处罚金额高于100万元处罚事件共"
+        + str(more_than_100)
+        + "起。"
+        + topsum1month
+        + "发生最高处罚金额"
+        + str(round(topsum1.values[0], 2))
+        + "万元。"
+    )
+    st.markdown("##### " + image2_text)
 
     # count by orgname
     df_org_count = df_month.groupby(["区域"]).size().reset_index(name="count")
     # sort by count desc
-    df_org_count=df_org_count.sort_values(by=["count"], ascending=False)
+    df_org_count = df_org_count.sort_values(by=["count"], ascending=False)
     # st.write(df_org_count)
     org_ls = df_org_count["区域"].tolist()
     count_ls = df_org_count["count"].tolist()
@@ -1015,3 +1099,62 @@ def count_by_province(city_ls, count_ls):
     provinces, counts = zip(*sorted_provinces)
 
     return list(provinces), list(counts)
+
+
+def update_safelabel():
+    # get safe detail
+    safedf = get_safedetail("")
+    # drop null value
+    safedf = safedf.dropna(subset=["违法事实"])
+    st.text(safedf.columns)
+
+    touptdf = safedf[
+        ["link", "罚款金额（万元）", "没收金额（万元）", "罚没款金额（万元）"]
+    ]
+    # fillna with 0
+    touptdf.fillna(0, inplace=True)
+    # set amount value
+    touptdf["amount"] = (
+        touptdf["罚款金额（万元）"].astype(float)
+        + touptdf["没收金额（万元）"].astype(float)
+        + touptdf["罚没款金额（万元）"].astype(float)
+    )
+
+    amtupddf = touptdf[["link", "amount"]]
+    # reset index
+    amtupddf.reset_index(drop=True, inplace=True)
+    # display newdf
+    st.markdown("### 分类数据")
+    st.write(amtupddf)
+    # if newdf is not empty, save it
+    if amtupddf.empty is False:
+        updlen = len(amtupddf)
+        st.info("待更新分类" + str(updlen) + "条数据")
+        savename = "safe_tocat" + get_now() + ".csv"
+        # download detail data
+        st.download_button(
+            "下载分类案例数据",
+            data=amtupddf.to_csv().encode("utf_8_sig"),
+            file_name=savename,
+        )
+    else:
+        st.info("无待更新分类数据")
+
+
+def get_safecat():
+    amtdf = get_csvdf(pensafe, "safecat")
+    # process amount
+    amtdf["amount"] = amtdf["amount"].astype(float)
+    # return amtdf[["id", "amount"]]
+    return amtdf
+
+
+def sum_amount_by_month(df):
+    df1 = df
+    df1["amount"] = df1["amount"].fillna(0)
+    df1["发布日期"] = pd.to_datetime(df1["发布日期"]).dt.date
+    # df=df[df['发文日期']>=pd.to_datetime('2020-01-01')]
+    df1["month"] = df1["发布日期"].apply(lambda x: x.strftime("%Y-%m"))
+    df_month_sum = df1.groupby(["month"])["amount"].sum().reset_index(name="sum")
+    df_sigle_penalty = df1[["month", "amount"]]
+    return df_month_sum, df_sigle_penalty
